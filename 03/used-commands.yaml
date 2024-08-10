@@ -1,0 +1,142 @@
+> kubectl apply -f .\sleep\sleep1.yaml -f .\sleep\sleep2.yaml
+
+> kubectl wait --for=condition=Ready pod -l app=sleep-2
+
+// Sprawdź adres IP drugiego poda: 
+> kubectl get pod -l app=sleep-2 --output jsonpath='{.items[0].status.podIP}' 
+// (zwrócono adres 10.1.0.20)
+
+
+// Użyj tego adresu do pingowania drugiego poda z poziomu pierwszego: 
+> kubectl exec deploy/sleep-1 -- ping -c 2 $(kubectl get pod -l app=sleep-2 --output jsonpath='{.items[0].status.podIP}') 
+
+// Usunięcie poda z przydzielonym adresem IP
+> kubectl delete pods -l app=sleep-2
+
+// Sprawdź adres IP drugiego poda: 
+> kubectl get pod -l app=sleep-2 --output jsonpath='{.items[0].status.podIP}' 
+// zwrócono adres 10.1.0.21
+
+// Wniosek jest taki, że k8s sam przydziela adresy IP do podów i nie są one stałe
+
+> kubectl exec deploy/sleep-1 -- ping -c 1 sleep-2
+> ping: bad address 'sleep-2'
+
+> kubectl apply -f ./sleep/sleep2-service.yaml
+
+> kubectl get svc sleep-2
+```
+NAME      TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+sleep-2   ClusterIP   10.105.73.41   <none>        80/TCP    7s
+```
+
+>kubectl exec deploy/sleep-1 -- ping -c 1 sleep-2
+```
+PING sleep-2 (10.105.73.41): 56 data bytes
+
+--- sleep-2 ping statistics ---
+1 packets transmitted, 0 packets received, 100% packet loss
+command terminated with exit code 1
+```
+
+Po wdrożeniu usługi widać, że rozwiązywanie nazw z pomocą DNS zadziałało poprawnie, jednak ping nie zadziałał.
+
+----
+> kubectl apply -f ./numbers/web.yaml -f ./numbers/api.yaml
+> kubectly wait --for=condition=Ready pod -l app=numbers-web
+> kubectl port-forward deploy/numbers-web 8080:80
+
+W przeglądarce dostępna jest teraz strona pod adresem localhost:8080, jednakże próba interakcji z przyciskiem `Go` końćzy się błędem
+Mimo że usługi numbers-web i numbers-api są wystawione komunikacja pomiędzy nimi nadal nie działa, ponieważ nie została zdefiniowana usługa
+
+> kubectly apply -f ./numbers/api-service.yaml
+> kubectly get svc numbers-api
+> kubectl port-forward deploy/numbers-web 8080:80
+Teraz komunikacja pomiędzy usługami działa poprawnie
+
+Nawet po usunięciu poda, adresacja z pomocą usług gwarantuje poprawne działanie
+
+> kb delete pod -l app=numbers-api
+> kubectl port-forward deploy/numbers-web 8080:80
+
+
+----
+
+### Wdrożenie load-balancera
+Przekierowanie portów to technika do debugowania, podczas pracy z klastrem raczej korzyta się z load-balancera który deleguje ruch do odpowiednich podów
+
+> kb apply -f ./numbers/web-serivce.yaml
+
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: numbers-web
+spec:
+  ports:
+    - port: 8080
+      targetPort: 80
+  selector:
+    app: numbers-web
+  type: LoadBalancer
+  ```
+
+> kubectl get svc numbers-web -o jsonpath='{.status.loadBalancer.ingress[0].*}:8080'
+> localhost:8080
+
+-----
+### Routowanie ruchu poza K8s
+
+> kubectl delete svc numbers-api
+
+---
+
+## Rozwiązywanie usług w k8s
+
+> kb get endpoints sleep-2
+NAME      ENDPOINTS      AGE
+sleep-2   10.1.0.21:80   112m
+
+> kb delete pods -l app=sleep-2
+pod "sleep-2-7f69798f94-ttnxq" deleted
+
+> kb get endpoints sleep-2
+NAME      ENDPOINTS      AGE
+sleep-2   10.1.0.28:80   112m
+
+> kb delete deploy sleep-2
+deployment.apps "sleep-2" deleted
+
+> kb get endpoints sleep-2
+NAME      ENDPOINTS   AGE
+sleep-2   <none>      112m
+
+
+> kb get svc --namespace default
+NAME          TYPE           CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+kubernetes    ClusterIP      10.96.0.1        <none>        443/TCP          13h
+numbers-api   ClusterIP      10.100.101.173   <none>        80/TCP           24m
+numbers-web   LoadBalancer   10.105.141.235   localhost     8080:31762/TCP   70m
+sleep-2       ClusterIP      10.105.73.41     <none>        80/TCP           118m
+
+> kb get svc --namespace kube-system
+NAME       TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                  AGE
+kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   13h
+
+> kb exec deploy/sleep-1 -- sh -c 'nslookup   numbers-api.default.svc.cluster.local | grep "^[^*]"' 
+Server:         10.96.0.10
+Address:        10.96.0.10:53
+Name:   numbers-api.default.svc.cluster.local
+Address: 10.100.101.173
+
+> kb exec deploy/sleep-1 -- sh -c 'nslookup   kube-dns.kube-system.svc.cluster.local | grep "^[^*]"'         
+Server:         10.96.0.10
+Address:        10.96.0.10:53
+Name:   kube-dns.kube-system.svc.cluster.local
+Address: 10.96.0.10
+
+
+> kb delete deploy --all
+> kb delete svc --all
+
+
