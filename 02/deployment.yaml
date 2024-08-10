@@ -1,0 +1,24 @@
+# Wdrożenia są częścią specyfikacji API apps w wersji 1
+apiVersion: apps/v1
+kind: Deployment #Typ deployment a nie Pod jak w poprzednim przykładzie
+
+# Wdrożenie potrzebuje nazwy
+metadata:
+  name: hello-kiamol-4
+# Specyfikacja obejmuje selektor etykiet, którego wdrożenie używa do znalezienia swoich własnych zarządzanych zasobów
+# — ja używam etykiety app, ale może to być dowolna kombinacja par klucz-wartość
+spec:
+  selector:
+    matchLabels:
+      app: hello-kiamol-4
+    # Ten szablon jest używany, gdy wdrożenie tworzy szablon poda
+  template:
+    # Pody w deploymencie nie mają nazw, ale muszą określać etykiety zgodne z metadanymi selektora
+    metadata:
+      labels:
+        app: hello-kiamol-4
+    spec:
+      # Specyfikacja kapsuły zawiera nazwę i obraz kontenera
+      containers:
+        - name: web
+          image: kiamol/ch02-hello-kiamol
