@@ -108,3 +108,64 @@ deployment.apps/todo-web configured
 > kb get pods -l app=todo-web
 NAME                        READY   STATUS    RESTARTS   AGE
 todo-web-85c6bc54b5-7ccsd   1/1     Running   0          7s
+
+
+
+----
+## Sekrety
+
+> kb create secret generic sleep-secret-literal --from-literal=secret=shh...
+secret/sleep-secret-literal created
+
+> kb describe secret sleep-secret-literal
+Name:         sleep-secret-literal
+Namespace:    default
+Labels:       <none>
+Annotations:  <none>
+
+Type:  Opaque
+
+Data
+====
+secret:  6 bytes
+> kb get  secret sleep-secret-literal    
+NAME                   TYPE     DATA   AGE
+sleep-secret-literal   Opaque   1      24s
+
+> kb get  secret sleep-secret-literal -o jsonpath='{.data.secret}'
+c2hoLi4u // zakodowana wartość sekretu, kubernetes przechowuje sekrety zakodowane w base64
+
+> kb get  secret sleep-secret-literal -o jsonpath='{.data.secret}' | base64 -d
+
+> function Convert-ToBase64 {
+>>     param (
+>>         [parameter(ValueFromPipeline)]
+>>         [string] $text,
+>>         [switch] $d
+>>     )
+>>     if ($d){
+>>         [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($text))
+>>     }
+>>     else {
+>>         [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($text))
+>>     }
+>> }
+> Set-Alias base64  Convert-ToBase64
+
+> kb get  secret sleep-secret-literal -o jsonpath='{.data.secret}' | base64 -d
+shh...
+> 
+
+--- 
+Uruchomienie poda k8s korzystającego z sekretu środowiskowego zdefiniowanego powyżej, przypisującego go jako zmienna środowiskowa
+> kb apply -f .\sleep\sleep-with-secret.yaml
+deployment.apps/sleep configured
+
+> kb exec deploy/sleep -- printenv KIAMOL_SECRET
+shh...
+
+> kb apply -f .\todo-list\secrets\todo-db-secret-test.yaml
+secret/todo-db-secret-test configured
+
+> kb get secret todo-db-secret-test -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d
+kiamol-2*2*
